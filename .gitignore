@@ -1,0 +1,19 @@
+# Local secrets; keep the safe example file
+.env
+.env.*
+!.env.example
+
+# Python environment and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and operating-system files
+.idea/
+.DS_Store
+
+# Local assignment reference
+temp_doc/
