@@ -1,14 +1,17 @@
 """Isolate provider-specific API calls behind a simple text-generation function."""
 
 from openai import APIError, APITimeoutError, OpenAI
+from openai.types.responses import ResponseInputParam
 
 from app.config import get_settings
+from app.memory import ConversationMessage
 
 
 SYSTEM_INSTRUCTIONS = (
     "You are a friendly assistant for personalized astrology-themed conversations. "
     "Give concise, helpful answers based only on information supplied to you. "
-    "Do not invent user details or claim to remember earlier conversations. "
+    "Use the supplied recent conversation to understand follow-up questions. "
+    "Do not invent user details or claim knowledge of conversations not supplied. "
     "Ask a brief clarifying question when essential information is missing. "
     "Astrology calculations are not connected: do not claim to have calculated "
     "a birth chart or present predictions as certain."
@@ -22,10 +25,18 @@ class LLMError(Exception):
 class LLMTimeoutError(LLMError):
     """Distinguish a timed-out provider request from other generation failures."""
 
-    
-def generate_reply(message: str) -> str:
-    """Generate one answer; keep SDK details and errors out of the chat workflow."""
+
+def generate_reply(
+    message: str, history: list[ConversationMessage] | None = None
+) -> str:
+    """Generate an answer from recent messages followed by the current user input."""
     settings = get_settings()
+    # Preserve roles and chronological order; the current message is added once.
+    messages: ResponseInputParam = [
+        {"role": item["role"], "content": item["content"]}
+        for item in (history or [])
+    ]
+    messages.append({"role": "user", "content": message})
     try:
         # A context manager closes network resources even if the request fails.
         # Disable automatic retries to keep this first synchronous flow simple.
@@ -37,7 +48,7 @@ def generate_reply(message: str) -> str:
             result = client.responses.create(
                 model=settings.openai_model,
                 instructions=SYSTEM_INSTRUCTIONS,
-                input=message,
+                input=messages,
                 max_output_tokens=600,
                 store=False,
             )

@@ -21,5 +21,5 @@ class ChatResponse(BaseModel):
     response: str
     user_id: str
     session_id: str
-    # Each response gets its own list; no context is retrieved at this stage.
+    # Each response gets its own list; it stays empty if no prior context is used.
     context_used: list[str] = Field(default_factory=list)
