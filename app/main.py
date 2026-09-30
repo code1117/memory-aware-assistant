@@ -1,7 +1,10 @@
 """Create the FastAPI application and expose its HTTP endpoints."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
+from app.chat import handle_chat
+from app.config import ConfigurationError
+from app.llm import LLMError, LLMTimeoutError
 from app.models import ChatRequest, ChatResponse
 
 
@@ -17,11 +20,14 @@ def health_check() -> dict[str, str]:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    """Accept a validated message and return a placeholder until AI is connected."""
-    # FastAPI validates the request before calling this function. The response
-    # echoes the identifiers so the caller can match it to their conversation.
-    return ChatResponse(
-        response="Placeholder response: your message was received. AI and memory are not connected yet.",
-        user_id=request.user_id,
-        session_id=request.session_id,
-    )
+    """Answer a validated message and translate expected failures into HTTP errors."""
+    # Keep this endpoint synchronous: FastAPI runs it in a worker thread so the
+    # blocking SDK call does not block the server's asynchronous event loop.
+    try:
+        return handle_chat(request)
+    except ConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LLMTimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
