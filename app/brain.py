@@ -4,6 +4,7 @@ Run `uv run python -m app.brain` to check connectivity without changing data.
 """
 
 import argparse
+from threading import Lock
 
 from neo4j import Driver, GraphDatabase, Query
 from neo4j.exceptions import DriverError, Neo4jError
@@ -23,6 +24,8 @@ class BrainStore:
         """Reuse the driver's connection pool; open short-lived sessions per query."""
         self._driver = driver
         self._database = database
+        self._schema_ready = False
+        self._schema_lock = Lock()
 
     def _query(self, cypher: str, **parameters) -> list[dict]:
         """Execute a parameterized query and consume results before closing its session."""
@@ -43,14 +46,39 @@ class BrainStore:
 
     def ensure_schema(self) -> None:
         """Create uniqueness rules once at startup; repeated calls are safe."""
+        with self._schema_lock:
+            if self._schema_ready:
+                return
+            self._query("""
+                CREATE CONSTRAINT user_id_unique IF NOT EXISTS
+                FOR (u:User) REQUIRE u.user_id IS UNIQUE
+            """)
+            self._query("""
+                CREATE CONSTRAINT memory_user_key_unique IF NOT EXISTS
+                FOR (m:Memory) REQUIRE (m.user_id, m.key) IS UNIQUE
+            """)
+            self._schema_ready = True
+
+    def save_updates(
+        self, user_id: str, profile: UserProfile, memories: list[MemoryFact]
+    ) -> None:
+        """Commit profile changes and all extracted facts together, or none on failure."""
+        self._validate_user_id(user_id)
+        properties = profile.model_dump(mode="json", exclude_unset=True)
+        if not properties and not memories:
+            return
         self._query("""
-            CREATE CONSTRAINT user_id_unique IF NOT EXISTS
-            FOR (u:User) REQUIRE u.user_id IS UNIQUE
-        """)
-        self._query("""
-            CREATE CONSTRAINT memory_user_key_unique IF NOT EXISTS
-            FOR (m:Memory) REQUIRE (m.user_id, m.key) IS UNIQUE
-        """)
+            MERGE (u:User {user_id: $user_id})
+            ON CREATE SET u.created_at = datetime()
+            SET u += $profile, u.updated_at = datetime()
+            WITH u
+            UNWIND $memories AS fact
+            MERGE (m:Memory {user_id: $user_id, key: fact.key})
+            ON CREATE SET m.created_at = datetime()
+            SET m += fact, m.updated_at = datetime()
+            MERGE (u)-[:HAS_MEMORY]->(m)
+        """, user_id=user_id, profile=properties,
+            memories=[memory.model_dump() for memory in memories])
 
     def save_profile(self, user_id: str, profile: UserProfile) -> None:
         """Create or patch a profile: omitted fields stay unchanged; explicit null clears a field."""
@@ -102,9 +130,9 @@ class BrainStore:
             raise ValueError("Memory retrieval limit must be between 1 and 100.")
         rows = self._query("""
             MATCH (u:User {user_id: $user_id})-[:HAS_MEMORY]->(m:Memory)
-            WHERE m.user_id = $user_id AND ($topics IS NULL OR m.topic IN $topics)
+            WHERE m.user_id = $user_id AND ($topics IS NULL OR properties(m)['topic'] IN $topics)
             RETURN properties(m) AS memory
-            ORDER BY m.updated_at DESC, m.key
+            ORDER BY memory['updated_at'] DESC, memory['key']
             LIMIT $limit
         """, user_id=user_id, topics=topics, limit=limit)
         # Optional target_year/timeframe may be absent; exclude internal user

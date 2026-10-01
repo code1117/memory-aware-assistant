@@ -41,9 +41,10 @@ class ChatRequest(BaseModel):
     # Strict validation rejects other JSON types instead of converting them.
     model_config = ConfigDict(str_strip_whitespace=True, strict=True)
 
-    user_id: str = Field(min_length=1)
-    session_id: str = Field(min_length=1)
-    message: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(min_length=1, max_length=128)
+    message: str = Field(min_length=1, max_length=4000)
+    profile: UserProfile | None = None
 
 
 class ChatResponse(BaseModel):
@@ -54,3 +55,30 @@ class ChatResponse(BaseModel):
     session_id: str
     # Each response gets its own list; it stays empty if no prior context is used.
     context_used: list[str] = Field(default_factory=list)
+    memory_status: Literal["saved", "unchanged", "unavailable", "failed"] = "unchanged"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ProfileUpdate(BaseModel):
+    """One explicitly stated profile change, supported by a quote from the message."""
+
+    model_config = ConfigDict(extra="forbid")
+    field: Literal["name", "date_of_birth", "time_of_birth", "birth_place", "preferred_language", "zodiac_sign"]
+    value: str | None
+    evidence: str = Field(min_length=1, max_length=500)
+
+
+class MemoryProposal(BaseModel):
+    """A proposed durable fact and the exact user text supporting it."""
+
+    model_config = ConfigDict(extra="forbid")
+    fact: MemoryFact
+    evidence: str = Field(min_length=1, max_length=500)
+
+
+class MemoryExtraction(BaseModel):
+    """Bound the structured output used to update persistent user knowledge."""
+
+    model_config = ConfigDict(extra="forbid")
+    profile_updates: list[ProfileUpdate] = Field(default_factory=list, max_length=6)
+    memories: list[MemoryProposal] = Field(default_factory=list, max_length=5)

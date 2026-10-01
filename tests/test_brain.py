@@ -129,3 +129,32 @@ def test_data_survives_closing_and_reopening_the_connection(brain):
         store = BrainStore(reader, settings.database)
         assert store.get_profile(users[0]).name == "Rahul"
         assert store.get_memories(users[0]) == [career_goal()]
+
+
+def test_combined_updates_and_profile_only_updates(brain):
+    """The chat write operation supports a profile alone, then profile plus facts."""
+    store, users, _ = brain
+    store.save_updates(users[0], UserProfile(name="Rahul"), [])
+    assert store.get_profile(users[0]).name == "Rahul"
+    store.save_updates(users[0], UserProfile(birth_place="Delhi"), [career_goal()])
+    assert store.get_profile(users[0]).name == "Rahul"
+    assert store.get_profile(users[0]).birth_place == "Delhi"
+    assert store.get_memories(users[0]) == [career_goal()]
+
+
+def test_combined_update_is_rolled_back_if_query_fails(brain, monkeypatch):
+    """An error later in the write query must not leave a partially patched profile."""
+    from app.brain import BrainError
+
+    store, users, _ = brain
+    store.save_profile(users[0], UserProfile(name="Before"))
+    fact = career_goal()
+    # Simulate a bad serialized value after model validation. Neo4j cannot store
+    # a nested map as a node property, so the single transaction must roll back.
+    monkeypatch.setattr(MemoryFact, "model_dump", lambda self: {
+        "key": "career_change", "content": {"invalid": "nested property"}
+    })
+    with pytest.raises(BrainError):
+        store.save_updates(users[0], UserProfile(name="After"), [fact])
+    assert store.get_profile(users[0]).name == "Before"
+    assert store.get_memories(users[0]) == []

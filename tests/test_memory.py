@@ -56,7 +56,7 @@ def test_chat_passes_history_and_reports_context(monkeypatch):
     memory = ConversationMemory()
     calls = []
 
-    def fake_reply(message, history):
+    def fake_reply(message, history, **context):
         """Capture model inputs and return a deterministic answer without an API call."""
         calls.append((message, history))
         return "Practice generators."
@@ -83,7 +83,7 @@ def test_failed_generation_does_not_change_history(monkeypatch):
     memory.add_exchange("alice", "one", "Hello", "Hi")
     before = memory.get_history("alice", "one")
 
-    def failing_reply(message, history):
+    def failing_reply(message, history, **context):
         """Simulate an unavailable AI service without making a network request."""
         raise LLMError("Unavailable")
 
