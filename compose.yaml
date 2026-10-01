@@ -1,0 +1,21 @@
+# Start a local Neo4j Community database with: docker compose up -d
+services:
+  neo4j:
+    # Pin a version so reviewers start the same database version.
+    image: neo4j:2026.09.0
+    environment:
+      # Neo4j's initial username is neo4j. Compose reads the password from .env
+      # and stops with a helpful error if it is missing or empty.
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in your local .env file}"
+    ports:
+      # Only expose these ports on this computer, not the local network.
+      - "127.0.0.1:7474:7474" # Browser interface (HTTP).
+      - "127.0.0.1:7687:7687" # Database connections (Bolt).
+    volumes:
+      # Database files survive container restarts and docker compose down.
+      - neo4j_data:/data
+
+volumes:
+  # Docker manages this storage separately from the disposable container.
+  # docker compose down --volumes would delete it, including saved memories.
+  neo4j_data:
