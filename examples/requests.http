@@ -1,0 +1,100 @@
+# Manual API examples, not automated tests. Use an IDE HTTP client, or copy the
+# JSON bodies into http://127.0.0.1:8000/docs. No extra tool is required for /docs.
+# In /docs, replace {{user}} with demo-review-1 manually; IDE variables are not
+# expanded by the API documentation page.
+# Start Docker/Neo4j and Uvicorn first. Run requests in order.
+# Change the user value for a fresh demo; data persists between app restarts.
+@host = http://127.0.0.1:8000
+@user = demo-review-1
+
+### 1. Liveness: expected 200 and {"status":"ok"}; does not check the database.
+GET {{host}}/health
+
+### 2. Create a profile and career memory: expected saved, with no warnings.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-a",
+  "message": "I plan to change jobs in 2027.",
+  "profile": {
+    "name": "Rahul",
+    "date_of_birth": "1995-08-15",
+    "time_of_birth": "08:30:00",
+    "birth_place": "Delhi",
+    "preferred_language": "English",
+    "zodiac_sign": "Leo"
+  }
+}
+
+### 3. Recall in a NEW session: should mention 2027 and career_goal.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-b",
+  "message": "What are my career plans?"
+}
+
+### 4. Correct the same goal: expected saved; career_change is updated in place.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-b",
+  "message": "Actually, I plan to change jobs in 2028, not 2027."
+}
+
+### 5. Recall the correction in another session: should mention 2028.
+# Optionally stop/restart Uvicorn before this request to check persistence.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-c",
+  "message": "What are my career plans?"
+}
+
+### 6. Follow-up: should refer to the last reply and include recent_conversation.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-c",
+  "message": "Why do you say that?"
+}
+
+### 7. Unrelated question: career_goal should not be in context_used.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-d",
+  "message": "What is 2 + 2?"
+}
+
+### 8. Another user must not receive Rahul's career goal.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "demo-review-other",
+  "session_id": "session-c",
+  "message": "What are my career plans?"
+}
+
+### 9. Invalid input: expected HTTP 422, with no AI call or saved update.
+POST {{host}}/chat
+Content-Type: application/json
+
+{
+  "user_id": "{{user}}",
+  "session_id": "session-c",
+  "message": "   "
+}
